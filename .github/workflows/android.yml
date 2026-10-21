@@ -1,0 +1,284 @@
+
+name: Build Shwe Calculator APK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/android.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Create Flutter project
+        run: flutter create --project-name shwe_calculator app
+
+      - name: Add gold calculator screen
+        run: |
+          cat > app/lib/main.dart <<'DART'
+          import 'package:flutter/material.dart';
+
+          void main() => runApp(const GoldApp());
+
+          class GoldApp extends StatelessWidget {
+            const GoldApp({super.key});
+            @override
+            Widget build(BuildContext context) => MaterialApp(
+              debugShowCheckedModeBanner: false,
+              title: 'ရွှေတွက်စက်',
+              theme: ThemeData(
+                colorScheme: ColorScheme.fromSeed(
+                  seedColor: const Color(0xFF9A7022)),
+                useMaterial3: true,
+              ),
+              home: const Calculator(),
+            );
+          }
+
+          class Calculator extends StatefulWidget {
+            const Calculator({super.key});
+            @override
+            State<Calculator> createState() => _CalculatorState();
+          }
+
+          class _CalculatorState extends State<Calculator> {
+            final price = TextEditingController();
+            final kyat = TextEditingController(text: '0');
+            final pae = TextEditingController(text: '0');
+            final yway = TextEditingController(text: '0');
+            final wk = TextEditingController(text: '0');
+            final wp = TextEditingController(text: '0');
+            final wy = TextEditingController(text: '0');
+            final labor = TextEditingController(text: '0');
+            final extra = TextEditingController(text: '0');
+            final discount = TextEditingController(text: '0');
+            final qty = TextEditingController(text: '1');
+            String wasteMode = 'weight';
+            String laborMode = 'fixed';
+
+            double val(TextEditingController c) =>
+                double.tryParse(c.text) ?? 0;
+            double weight(TextEditingController k,
+                TextEditingController p, TextEditingController y) =>
+                (val(k) * 128 + val(p) * 8 + val(y)) / 128;
+            String money(double v) =>
+                '${v.round().toString().replaceAllMapped(
+                  RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
+                  (m) => '${m[1]},')} ကျပ်';
+
+            @override
+            void initState() {
+              super.initState();
+              for (final c in [price, kyat, pae, yway, wk, wp, wy,
+                labor, extra, discount, qty]) {
+                c.addListener(refresh);
+              }
+            }
+
+            void refresh() => setState(() {});
+
+            @override
+            void dispose() {
+              for (final c in [price, kyat, pae, yway, wk, wp, wy,
+                labor, extra, discount, qty]) {
+                c.dispose();
+              }
+              super.dispose();
+            }
+
+            Widget field(String label, TextEditingController c) =>
+              TextField(
+                controller: c,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true),
+                decoration: InputDecoration(
+                  labelText: label,
+                  border: const OutlineInputBorder(),
+                ),
+              );
+
+            Widget section(String title, List<Widget> children) =>
+              Card(
+                margin: const EdgeInsets.only(bottom: 12),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title, style: const TextStyle(
+                        fontSize: 17, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 14),
+                      ...children.map((w) => Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: w)),
+                    ],
+                  ),
+                ),
+              );
+
+            @override
+            Widget build(BuildContext context) {
+              final p = val(price);
+              final w = weight(kyat, pae, yway);
+              final added = wasteMode == 'weight'
+                  ? weight(wk, wp, wy) : 0.0;
+              final base = p * w;
+              final waste = wasteMode == 'weight'
+                  ? p * added
+                  : wasteMode == 'percent'
+                    ? base * val(wk) / 100 : val(wk);
+              final count = val(qty) < 1 ? 1.0 : val(qty);
+              final baseAll = base * count;
+              final wasteAll = waste * count;
+              final laborAll = laborMode == 'perkyat'
+                  ? val(labor) * (w + added) * count : val(labor);
+              final extraAll = val(extra) * count;
+              final total = (baseAll + wasteAll + laborAll +
+                  extraAll - val(discount)).clamp(0, double.infinity);
+
+              return Scaffold(
+                appBar: AppBar(
+                  title: const Text('ရွှေတွက်စက်'),
+                  backgroundColor: const Color(0xFF9A7022),
+                  foregroundColor: Colors.white,
+                ),
+                body: ListView(
+                  padding: const EdgeInsets.all(14),
+                  children: [
+                    section('၁။ ရွှေဈေး', [
+                      field('ရွှေ ၁ ကျပ်သားဈေး (ကျပ်)', price),
+                    ]),
+                    section('၂။ ရွှေအလေးချိန်', [
+                      Row(children: [
+                        Expanded(child: field('ကျပ်သား', kyat)),
+                        const SizedBox(width: 8),
+                        Expanded(child: field('ပဲ', pae)),
+                        const SizedBox(width: 8),
+                        Expanded(child: field('ရွေး', yway)),
+                      ]),
+                      const Text('၁ ကျပ်သား = ၁၆ ပဲ = ၁၂၈ ရွေး'),
+                    ]),
+                    section('၃။ အလျော့တွက်', [
+                      DropdownButtonFormField<String>(
+                        value: wasteMode,
+                        decoration: const InputDecoration(
+                          labelText: 'အလျော့တွက်နည်း',
+                          border: OutlineInputBorder()),
+                        items: const [
+                          DropdownMenuItem(value: 'weight',
+                            child: Text('အလေးချိန်ဖြင့်')),
+                          DropdownMenuItem(value: 'percent',
+                            child: Text('ရာခိုင်နှုန်းဖြင့်')),
+                          DropdownMenuItem(value: 'money',
+                            child: Text('ငွေပမာဏဖြင့်')),
+                        ],
+                        onChanged: (v) => setState(() {
+                          wasteMode = v!;
+                        }),
+                      ),
+                      if (wasteMode == 'weight')
+                        Row(children: [
+                          Expanded(child: field('ကျပ်သား', wk)),
+                          const SizedBox(width: 8),
+                          Expanded(child: field('ပဲ', wp)),
+                          const SizedBox(width: 8),
+                          Expanded(child: field('ရွေး', wy)),
+                        ])
+                      else
+                        field(wasteMode == 'percent'
+                          ? 'အလျော့တွက် ရာခိုင်နှုန်း (%)'
+                          : 'အလျော့တွက်ငွေ (ကျပ်)', wk),
+                    ]),
+                    section('၄။ လက်ခနှင့် အခြားငွေ', [
+                      DropdownButtonFormField<String>(
+                        value: laborMode,
+                        decoration: const InputDecoration(
+                          labelText: 'လက်ခတွက်နည်း',
+                          border: OutlineInputBorder()),
+                        items: const [
+                          DropdownMenuItem(value: 'fixed',
+                            child: Text('စုစုပေါင်း လက်ခ')),
+                          DropdownMenuItem(value: 'perkyat',
+                            child: Text('တစ်ကျပ်သားနှုန်း')),
+                        ],
+                        onChanged: (v) => setState(() {
+                          laborMode = v!;
+                        }),
+                      ),
+                      field('လက်ခ (ကျပ်)', labor),
+                      field('အခြားကုန်ကျစရိတ် (ကျပ်)', extra),
+                      field('လျှော့ပေးငွေ (ကျပ်)', discount),
+                      field('အရေအတွက် (ခု)', qty),
+                    ]),
+                    Card(
+                      color: const Color(0xFFFFF1CF),
+                      child: Padding(
+                        padding: const EdgeInsets.all(18),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('စုစုပေါင်း ကျသင့်ငွေ'),
+                            const SizedBox(height: 6),
+                            Text(money(total),
+                              style: const TextStyle(
+                                fontSize: 27,
+                                fontWeight: FontWeight.bold)),
+                            const Divider(),
+                            result('မူလရွှေဖိုး', money(baseAll)),
+                            result('အလျော့တွက်ဖိုး', money(wasteAll)),
+                            result('လက်ခ', money(laborAll)),
+                            result('အခြားကုန်ကျစရိတ်', money(extraAll)),
+                            result('လျှော့ပေးငွေ', money(val(discount))),
+                            result('တွက်ထားသော အလေးချိန်',
+                              '${(w + added).toStringAsFixed(4)} ကျပ်သား'),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const Text(
+                      'မှတ်ချက် - ဆိုင်၏ အလျော့တွက်နှင့် လက်ခတွက်နည်းကို '
+                      'အတည်ပြုပါ။ ဤ App သည် ကိုယ်တိုင်ထည့်သော '
+                      'တန်ဖိုးများကို အခြေခံတွက်ချက်ပေးသည်။',
+                      style: TextStyle(fontSize: 12)),
+                  ],
+                ),
+              );
+            }
+
+            Widget result(String label, String value) =>
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(child: Text(label)),
+                    const SizedBox(width: 8),
+                    Flexible(child: Text(value,
+                      textAlign: TextAlign.end)),
+                  ],
+                ),
+              );
+          }
+          DART
+
+      - name: Build Android APK
+        run: |
+          cd app
+          flutter pub get
+          flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: shwe-calculator-apk
+          path: app/build/app/outputs/flutter-apk/app-release.apk
+          flutter-apk/app-release.apk
